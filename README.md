@@ -600,6 +600,11 @@ For more information on the roadmap for go-mssqldb, [project plans](https://gith
 - [pkg.go.dev](https://pkg.go.dev/github.com/microsoft/go-mssqldb) - API reference documentation
 - [Examples](./examples) - Sample code for common scenarios
 
+## Relational Database Drivers
+
+### Go Drivers for SQL Server
+
+• [go-mssqldb](https://github.com/microsoft/go-mssqldb) - Microsoft's official Go driver for SQL Server and Azure SQL Database. Fork of denisenkom/go-mssqldb with active maintenance, Azure AD authentication, Always Encrypted, and bulk operations.
 
 # Microsoft Open Source Code of Conduct
 
