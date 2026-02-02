@@ -192,6 +192,45 @@ func TestNullDateTime(t *testing.T) {
 			t.Error("Expected Valid to be false after error")
 		}
 	})
+
+	// Test JSON marshaling/unmarshaling
+	t.Run("JSON", func(t *testing.T) {
+		// Valid case
+		testTime := time.Date(2023, time.December, 25, 14, 30, 45, 0, time.UTC)
+		dateTime := civil.DateTimeOf(testTime)
+		nullDateTime := NullDateTime{DateTime: dateTime, Valid: true}
+		data, err := json.Marshal(nullDateTime)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+
+		var unmarshaled NullDateTime
+		err = json.Unmarshal(data, &unmarshaled)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !unmarshaled.Valid || unmarshaled.DateTime != dateTime {
+			t.Errorf("Expected %v (valid), got %v (valid: %t)", dateTime, unmarshaled.DateTime, unmarshaled.Valid)
+		}
+
+		// Invalid case
+		nullDateTime = NullDateTime{Valid: false}
+		data, err = json.Marshal(nullDateTime)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if string(data) != "null" {
+			t.Errorf("Expected 'null', got %s", string(data))
+		}
+
+		err = json.Unmarshal([]byte("null"), &unmarshaled)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if unmarshaled.Valid {
+			t.Error("Expected Valid to be false")
+		}
+	})
 }
 
 func TestNullTime(t *testing.T) {
@@ -255,6 +294,45 @@ func TestNullTime(t *testing.T) {
 		}
 		if nullTime.Valid {
 			t.Error("Expected Valid to be false after error")
+		}
+	})
+
+	// Test JSON marshaling/unmarshaling
+	t.Run("JSON", func(t *testing.T) {
+		// Valid case
+		testTime := time.Date(2023, time.December, 25, 14, 30, 45, 0, time.UTC)
+		civilTime := civil.TimeOf(testTime)
+		nullTime := NullTime{Time: civilTime, Valid: true}
+		data, err := json.Marshal(nullTime)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+
+		var unmarshaled NullTime
+		err = json.Unmarshal(data, &unmarshaled)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !unmarshaled.Valid || unmarshaled.Time != civilTime {
+			t.Errorf("Expected %v (valid), got %v (valid: %t)", civilTime, unmarshaled.Time, unmarshaled.Valid)
+		}
+
+		// Invalid case
+		nullTime = NullTime{Valid: false}
+		data, err = json.Marshal(nullTime)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if string(data) != "null" {
+			t.Errorf("Expected 'null', got %s", string(data))
+		}
+
+		err = json.Unmarshal([]byte("null"), &unmarshaled)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if unmarshaled.Valid {
+			t.Error("Expected Valid to be false")
 		}
 	})
 }

@@ -79,6 +79,9 @@ The following is a list of datatypes that can be used as buffer to hold a output
 - time.Time
 - mssql.DateTime1
 - mssql.DateTimeOffset
+- mssql.NullDate (for nullable date output parameters)
+- mssql.NullDateTime (for nullable datetime2 output parameters)
+- mssql.NullTime (for nullable time output parameters)
 
 The only type that can be used to retrieve an output of `smalldatetime` is `string`, otherwise you will get a `mssql: Error converting data type datetimeoffset/datetime1 to smalldatetime` error. Furthermore, `string` and `mssql.DateTime1` are the only types that can be used to retrieve output of `datetime` type, otherwise you will get a `mssql: Error converting data type datetimeoffset to datetime` error.
 
