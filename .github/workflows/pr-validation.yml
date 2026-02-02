@@ -28,5 +28,36 @@ jobs:
         export DATABASE=master
         export HOST=.
         docker run -m 2GB -e ACCEPT_EULA=1 -d --name sqlserver -p:1433:1433 -e SA_PASSWORD=$SQLCMDPASSWORD mcr.microsoft.com/mssql/server:${{ matrix.sqlImage }}
-        sleep 10
+        
+        # Wait for SQL Server to be ready with retry logic
+        echo "Waiting for SQL Server to be ready..."
+        MAX_ATTEMPTS=60
+        ATTEMPT=0
+        READY=0
+        
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "Attempt $ATTEMPT of $MAX_ATTEMPTS..."
+          
+          # Check if SQL Server is accepting connections
+          if docker exec sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$SQLCMDPASSWORD" -Q "SELECT 1" > /dev/null 2>&1; then
+            echo "SQL Server is ready!"
+            READY=1
+            break
+          fi
+          
+          sleep 2
+        done
+        
+        if [ $READY -eq 0 ]; then
+          echo "SQL Server failed to become ready after $MAX_ATTEMPTS attempts"
+          echo "Docker container status:"
+          docker ps -a
+          echo "Docker logs:"
+          docker logs sqlserver --tail 100
+          echo "Docker inspect (relevant fields):"
+          docker inspect sqlserver --format='{{.State.Status}} {{.State.Health}}'
+          exit 1
+        fi
+        
         go test -v ./...
