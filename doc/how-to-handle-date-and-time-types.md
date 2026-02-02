@@ -49,12 +49,12 @@ _, err = conn.ExecContext(ctx, "SELECT @p1 = '2023-12-25 14:30:45'", sql.Out{Des
 
 ## Retrieving Date and Time Data
 
-The following is a list of datatypes that can be used to retrieved data from a SQL Server date and/or time type column:
+The following is a list of datatypes that can be used to retrieve data from a SQL Server date and/or time type column:
 - string
 - sql.RawBytes
 - time.Time
 - mssql.DateTime1
-- mssql.DateTiimeOffset
+- mssql.DateTimeOffset
 - mssql.NullDate (for nullable date columns)
 - mssql.NullTime (for nullable time columns)
 - mssql.NullDateTime (for nullable datetime2 columns)
