@@ -252,3 +252,40 @@ func TestBadConnRejection(t *testing.T) {
 	}
 
 }
+
+// TestMakeParamNullCivilTypesNilPointer tests that nil pointers to nullable civil types
+// don't cause panics and are handled as NULL values.
+func TestMakeParamNullCivilTypesNilPointer(t *testing.T) {
+	conn := &Conn{}
+	s := &Stmt{c: conn}
+
+	// Test nil pointer to NullDate
+	var nilDate *NullDate
+	param, err := s.makeParam(nilDate)
+	if err != nil {
+		t.Fatalf("makeParam failed for nil *NullDate: %v", err)
+	}
+	if param.ti.TypeId != typeDateN {
+		t.Errorf("Expected typeDateN (%d) for nil *NullDate, got %d", typeDateN, param.ti.TypeId)
+	}
+
+	// Test nil pointer to NullDateTime
+	var nilDateTime *NullDateTime
+	param, err = s.makeParam(nilDateTime)
+	if err != nil {
+		t.Fatalf("makeParam failed for nil *NullDateTime: %v", err)
+	}
+	if param.ti.TypeId != typeDateTime2N {
+		t.Errorf("Expected typeDateTime2N (%d) for nil *NullDateTime, got %d", typeDateTime2N, param.ti.TypeId)
+	}
+
+	// Test nil pointer to NullTime
+	var nilTime *NullTime
+	param, err = s.makeParam(nilTime)
+	if err != nil {
+		t.Fatalf("makeParam failed for nil *NullTime: %v", err)
+	}
+	if param.ti.TypeId != typeTimeN {
+		t.Errorf("Expected typeTimeN (%d) for nil *NullTime, got %d", typeTimeN, param.ti.TypeId)
+	}
+}

@@ -1022,16 +1022,25 @@ func (s *Stmt) makeParam(val driver.Value) (res param, err error) {
 		}
 		return s.makeParamExtra(valuer)
 	case *NullDate:
+		if valuer == nil {
+			return s.makeParamExtra(NullDate{})
+		}
 		if valuer.Valid {
 			return s.makeParamExtra(valuer.Date)
 		}
 		return s.makeParamExtra(*valuer)
 	case *NullDateTime:
+		if valuer == nil {
+			return s.makeParamExtra(NullDateTime{})
+		}
 		if valuer.Valid {
 			return s.makeParamExtra(valuer.DateTime)
 		}
 		return s.makeParamExtra(*valuer)
 	case *NullTime:
+		if valuer == nil {
+			return s.makeParamExtra(NullTime{})
+		}
 		if valuer.Valid {
 			return s.makeParamExtra(valuer.Time)
 		}
