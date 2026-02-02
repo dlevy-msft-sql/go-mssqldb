@@ -58,7 +58,7 @@ func TestTVPGoSQLTypesWithStandardType(t *testing.T) {
 			s_moneyNull         MONEY
 		); `
 
-	sqltextdroptable := `DROP TYPE tvpGoSQLTypesWithStandardType;`
+	sqltextdroptable := `IF TYPE_ID('tvpGoSQLTypesWithStandardType') IS NOT NULL DROP TYPE tvpGoSQLTypesWithStandardType;`
 
 	sqltextcreatesp := `
 	CREATE PROCEDURE spwithtvpGoSQLTypesWithStandardType
@@ -100,7 +100,7 @@ func TestTVPGoSQLTypesWithStandardType(t *testing.T) {
 		SMoneyNull   *Money[decimal.Decimal]
 	}
 
-	sqltextdropsp := `DROP PROCEDURE spwithtvpGoSQLTypesWithStandardType;`
+	sqltextdropsp := `IF OBJECT_ID('spwithtvpGoSQLTypesWithStandardType', 'P') IS NOT NULL DROP PROCEDURE spwithtvpGoSQLTypesWithStandardType;`
 
 	_, err = db.ExecContext(ctx, sqltextcreatetable)
 	if err != nil {
@@ -365,7 +365,7 @@ func TestTVPGoSQLTypes(t *testing.T) {
 			p_moneyNull         MONEY
 		); `
 
-	sqltextdroptable := `DROP TYPE tvpGoSQLTypes;`
+	sqltextdroptable := `IF TYPE_ID('tvpGoSQLTypes') IS NOT NULL DROP TYPE tvpGoSQLTypes;`
 
 	sqltextcreatesp := `
 	CREATE PROCEDURE spwithtvpGoSQLTypes
@@ -395,7 +395,7 @@ func TestTVPGoSQLTypes(t *testing.T) {
 		PMoneyNull   Money[decimal.NullDecimal]
 	}
 
-	sqltextdropsp := `DROP PROCEDURE spwithtvpGoSQLTypes;`
+	sqltextdropsp := `IF OBJECT_ID('spwithtvpGoSQLTypes', 'P') IS NOT NULL DROP PROCEDURE spwithtvpGoSQLTypes;`
 
 	_, err = db.ExecContext(ctx, sqltextcreatetable)
 	if err != nil {
@@ -586,7 +586,7 @@ func testTVP(t *testing.T, guidConversion bool) {
 			p_moneyNull         MONEY
 		); `
 
-	sqltextdroptable := `DROP TYPE tvptable;`
+	sqltextdroptable := `IF TYPE_ID('tvptable') IS NOT NULL DROP TYPE tvptable;`
 
 	sqltextcreatesp := `
 	CREATE PROCEDURE spwithtvp
@@ -634,7 +634,7 @@ func testTVP(t *testing.T, guidConversion bool) {
 		PMoneyNull    *Money[decimal.Decimal] `db:"p_moneyNull"`
 	}
 
-	sqltextdropsp := `DROP PROCEDURE spwithtvp;`
+	sqltextdropsp := `IF OBJECT_ID('spwithtvp', 'P') IS NOT NULL DROP PROCEDURE spwithtvp;`
 
 	_, err = db.ExecContext(ctx, sqltextcreatetable)
 	if err != nil {
@@ -922,7 +922,7 @@ func testTVP_WithTag(t *testing.T, guidConversion bool) {
 			p_moneyNull         MONEY
 		); `
 
-	sqltextdroptable := `DROP TYPE tvptable;`
+	sqltextdroptable := `IF TYPE_ID('tvptable') IS NOT NULL DROP TYPE tvptable;`
 
 	sqltextcreatesp := `
 	CREATE PROCEDURE spwithtvp
@@ -936,7 +936,7 @@ func testTVP_WithTag(t *testing.T, guidConversion bool) {
 		SELECT * FROM @param2;
 		SELECT @param3;
 	END;`
-	sqltextdropsp := `DROP PROCEDURE spwithtvp;`
+	sqltextdropsp := `IF OBJECT_ID('spwithtvp', 'P') IS NOT NULL DROP PROCEDURE spwithtvp;`
 
 	type TvptableRowWithSkipTag struct {
 		PBinary           []byte                  `db:"p_binary"`
@@ -1255,7 +1255,7 @@ func TestTVPSchema(t *testing.T) {
 			message	NVARCHAR(100)
 		)`
 
-		dropTVP = `DROP TYPE TestTVPSchema.exempleTVP;`
+		dropTVP = `IF TYPE_ID('TestTVPSchema.exempleTVP') IS NOT NULL DROP TYPE TestTVPSchema.exempleTVP;`
 
 		procedureWithTVP = `	
 	CREATE PROCEDURE ExecTVP
@@ -1430,7 +1430,7 @@ func TestTVPUnsigned(t *testing.T) {
 			pIntNull          	INT
 		); `
 
-	sqltextdroptable := `DROP TYPE unsignedTvpTableTypes;`
+	sqltextdroptable := `IF TYPE_ID('unsignedTvpTableTypes') IS NOT NULL DROP TYPE unsignedTvpTableTypes;`
 
 	sqltextcreatesp := `
 	CREATE PROCEDURE spwithtvpUnsigned
@@ -1458,7 +1458,7 @@ func TestTVPUnsigned(t *testing.T) {
 		PintNull      *uint   `db:"pIntNull"`
 	}
 
-	sqltextdropsp := `DROP PROCEDURE spwithtvpUnsigned;`
+	sqltextdropsp := `IF OBJECT_ID('spwithtvpUnsigned', 'P') IS NOT NULL DROP PROCEDURE spwithtvpUnsigned;`
 
 	_, err = db.ExecContext(ctx, sqltextcreatetable)
 	if err != nil {
@@ -1602,7 +1602,7 @@ func TestTVPIdentity(t *testing.T) {
 			message	NVARCHAR(100)
 		)`
 
-		dropTVP = `DROP TYPE TestTVPSchemaIdentity.exempleTVP;`
+		dropTVP = `IF TYPE_ID('TestTVPSchemaIdentity.exempleTVP') IS NOT NULL DROP TYPE TestTVPSchemaIdentity.exempleTVP;`
 
 		procedureWithTVP = `	
 	CREATE PROCEDURE ExecIdentityTVP
