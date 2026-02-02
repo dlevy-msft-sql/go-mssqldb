@@ -1129,34 +1129,6 @@ func (s *Stmt) makeParam(val driver.Value) (res param, err error) {
 		res.ti.TypeId = typeNVarChar
 		res.buffer = nil
 		res.ti.Size = 8000
-	case NullDate: // only null values reach here
-		res.ti.TypeId = typeDateN
-		res.ti.Size = 3
-		res.buffer = []byte{}
-	case NullDateTime: // only null values reach here
-		res.ti.TypeId = typeDateTime2N
-		res.ti.Scale = 7
-		res.ti.Size = calcTimeSize(int(res.ti.Scale)) + 3
-		res.buffer = []byte{}
-	case NullTime: // only null values reach here
-		res.ti.TypeId = typeTimeN
-		res.ti.Scale = 7
-		res.ti.Size = calcTimeSize(int(res.ti.Scale))
-		res.buffer = []byte{}
-	case *NullDate: // only null values reach here
-		res.ti.TypeId = typeDateN
-		res.ti.Size = 3
-		res.buffer = []byte{}
-	case *NullDateTime: // only null values reach here
-		res.ti.TypeId = typeDateTime2N
-		res.ti.Scale = 7
-		res.ti.Size = calcTimeSize(int(res.ti.Scale)) + 3
-		res.buffer = []byte{}
-	case *NullTime: // only null values reach here
-		res.ti.TypeId = typeTimeN
-		res.ti.Scale = 7
-		res.ti.Size = calcTimeSize(int(res.ti.Scale))
-		res.buffer = []byte{}
 	case byte:
 		res.ti.TypeId = typeIntN
 		res.buffer = []byte{val}
