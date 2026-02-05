@@ -29,4 +29,14 @@ jobs:
         export HOST=.
         docker run -m 2GB -e ACCEPT_EULA=1 -d --name sqlserver -p:1433:1433 -e SA_PASSWORD=$SQLCMDPASSWORD mcr.microsoft.com/mssql/server:${{ matrix.sqlImage }}
         sleep 10
-        go test -v ./...
+        go test -coverprofile=coverage.out -covermode=atomic -v ./...
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: coverage.out
+        flags: unittests
+        name: go-${{ matrix.go }}-sql-${{ matrix.sqlImage }}
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
