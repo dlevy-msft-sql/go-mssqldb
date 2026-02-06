@@ -150,7 +150,7 @@ func TestOutputParameters_Integration(t *testing.T) {
 	// Test output parameters using sp_executesql which is a system proc
 	// This avoids the need to create a temp procedure
 	var outputVal int
-	_, err = db.ExecContext(ctx,
+	_, err := db.ExecContext(ctx,
 		"DECLARE @result INT; SET @result = @input * 2; SELECT @result",
 		sql.Named("input", 21))
 	if err != nil {
