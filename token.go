@@ -1198,7 +1198,11 @@ func (t *tokenProcessor) iterateResponse() error {
 					}
 				case doneStruct:
 					if token.Status&doneCount != 0 {
-						t.rowCount += int64(token.RowCount)
+						// Use assignment instead of accumulation for the final
+						// DONE/DONEPROC token. This prevents double-counting
+						// when triggers fire and send their own doneInProcStruct
+						// row counts before the outer statement's DONE token.
+						t.rowCount = int64(token.RowCount)
 					}
 					if token.isError() && t.firstError == nil {
 						t.firstError = token.getError()
