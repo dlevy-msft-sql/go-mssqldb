@@ -1206,7 +1206,17 @@ initiate_connection:
 		return nil, err
 	}
 
+	// Ensure the prelogin read respects the context deadline so connect()
+	// does not hang indefinitely when the server never responds.
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = toconn.SetDeadline(deadline)
+	}
+
 	fields, err = readPrelogin(outbuf)
+
+	// Clear the deadline so subsequent reads use the normal ConnTimeout behavior.
+	_ = toconn.SetDeadline(time.Time{})
+
 	if err != nil {
 		return nil, err
 	}
