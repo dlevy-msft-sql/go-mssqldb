@@ -841,33 +841,40 @@ func TestJSONMarshalUnmarshal(t *testing.T) {
 	})
 }
 
-// TestJSONWireDecoding tests that JSON data can be decoded from UTF-16LE wire format.
-// JSON uses the same wire encoding as NVarChar (UTF-16LE).
+// TestJSONWireDecoding tests that JSON data can be decoded from UTF-8 wire format.
+// SQL Server 2025 sends JSON as UTF-8, matching SqlClient and JDBC behavior.
 func TestJSONWireDecoding(t *testing.T) {
-	// Test decoding UTF-16LE encoded JSON
-	// The string `{"key":"value"}` in UTF-16LE
+	// Test decoding UTF-8 encoded JSON (Go strings are natively UTF-8)
 	jsonStr := `{"key":"value"}`
-	utf16Data := str2ucs2(jsonStr)
+	utf8Data := []byte(jsonStr)
 
-	decoded := decodeNChar(utf16Data)
+	decoded := string(utf8Data)
 	if decoded != jsonStr {
 		t.Errorf("Expected decoded JSON %q, got %q", jsonStr, decoded)
 	}
 
 	// Test with more complex JSON
 	complexJSON := `{"name":"test","value":123,"nested":{"array":[1,2,3]}}`
-	utf16Complex := str2ucs2(complexJSON)
-	decodedComplex := decodeNChar(utf16Complex)
+	utf8Complex := []byte(complexJSON)
+	decodedComplex := string(utf8Complex)
 	if decodedComplex != complexJSON {
 		t.Errorf("Expected decoded JSON %q, got %q", complexJSON, decodedComplex)
 	}
 
 	// Test empty JSON object
 	emptyJSON := `{}`
-	utf16Empty := str2ucs2(emptyJSON)
-	decodedEmpty := decodeNChar(utf16Empty)
+	utf8Empty := []byte(emptyJSON)
+	decodedEmpty := string(utf8Empty)
 	if decodedEmpty != emptyJSON {
 		t.Errorf("Expected decoded JSON %q, got %q", emptyJSON, decodedEmpty)
+	}
+
+	// Test with Unicode content (UTF-8 multi-byte)
+	unicodeJSON := `{"emoji":"😀","cjk":"中文"}`
+	utf8Unicode := []byte(unicodeJSON)
+	decodedUnicode := string(utf8Unicode)
+	if decodedUnicode != unicodeJSON {
+		t.Errorf("Expected decoded JSON %q, got %q", unicodeJSON, decodedUnicode)
 	}
 }
 
@@ -904,7 +911,7 @@ func TestJSONTypeFunctions(t *testing.T) {
 		if !hasLength {
 			t.Error("Expected makeGoLangTypeLength to return true for JSON")
 		}
-		expectedLength := int64(2147483645 / 2) // Same as nvarchar(max)
+		expectedLength := int64(2147483647) // matches JDBC Integer.MAX_VALUE; JSON is UTF-8 with up to 2GB storage
 		if length != expectedLength {
 			t.Errorf("Expected length %d, got: %d", expectedLength, length)
 		}

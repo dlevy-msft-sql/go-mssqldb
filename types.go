@@ -779,7 +779,9 @@ func readPLPType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.E
 	case typeNVarChar, typeNChar, typeNText:
 		return decodeNChar(bytesToDecode)
 	case typeJson:
-		return decodeNChar(bytesToDecode)
+		// JSON is sent as UTF-8 on the wire, matching SqlClient and JDBC.
+		// Go strings are natively UTF-8, so direct conversion is correct.
+		return string(bytesToDecode)
 	case typeUdt:
 		return decodeUdt(*ti, bytesToDecode)
 	}
@@ -1599,8 +1601,9 @@ func makeGoLangTypeLength(ti typeInfo) (int64, bool) {
 	case typeBigBinary:
 		return int64(ti.Size), true
 	case typeJson:
-		// JSON uses nvarchar(max) wire format; same max length as typeNVarChar PLP
-		return 2147483645 / 2, true
+		// JSON stores data as UTF-8 with up to 2GB storage.
+		// JDBC uses Integer.MAX_VALUE; we match that.
+		return 2147483647, true
 	case typeUdt:
 		switch ti.UdtInfo.TypeName {
 		case "hierarchyid":
