@@ -1170,6 +1170,11 @@ initiate_connection:
 	}
 
 	toconn := newTimeoutConn(conn, p.ConnTimeout)
+	defer func() {
+		if err != nil {
+			toconn.Close()
+		}
+	}()
 	outbuf := newTdsBuffer(packetSize, toconn)
 
 	if p.Encryption == msdsn.EncryptionStrict {
@@ -1376,7 +1381,6 @@ initiate_connection:
 				if token.isError() {
 					tokenErr := token.getError()
 					tokenErr.Message = "login error: " + tokenErr.Message
-					conn.Close()
 					return nil, tokenErr
 				}
 			case error:
