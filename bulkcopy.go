@@ -686,6 +686,18 @@ func (b *Bulk) makeParam(val DataValue, col columnStruct) (res param, err error)
 			err = fmt.Errorf("mssql: invalid type for Guid column: %T %s", val, val)
 			return
 		}
+	case typeJson:
+		// JSON uses the same wire encoding as NVarChar (UTF-16LE PLP)
+		switch val := val.(type) {
+		case string:
+			res.buffer = str2ucs2(val)
+		case []byte:
+			res.buffer = str2ucs2(string(val))
+		default:
+			err = fmt.Errorf("mssql: invalid type for JSON column: %T %s", val, val)
+			return
+		}
+		res.ti.Size = len(res.buffer)
 	default:
 		err = fmt.Errorf("mssql: type %x not implemented", col.ti.TypeId)
 	}

@@ -1018,6 +1018,12 @@ func (s *Stmt) makeParam(val driver.Value) (res param, err error) {
 		}
 	case UniqueIdentifier:
 	case NullUniqueIdentifier:
+	case JSON:
+		// Handle JSON before driver.Valuer to ensure native JSON type is used
+		return s.makeParamExtra(valuer)
+	case NullJSON:
+		// Handle NullJSON before driver.Valuer to ensure native JSON type is used
+		return s.makeParamExtra(valuer)
 	default:
 		break
 	case driver.Valuer:

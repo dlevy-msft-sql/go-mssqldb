@@ -66,6 +66,7 @@ const (
 	typeXml        = 0xf1
 	typeUdt        = 0xf0
 	typeTvp        = 0xf3
+	typeJson       = 0xf4
 
 	// long length types
 	typeText    = 0x23
@@ -102,6 +103,8 @@ type typeInfo struct {
 	XmlInfo   xmlInfo
 	Reader    func(ti *typeInfo, r *tdsBuffer, cryptoMeta *cryptoMetadata, encoding msdsn.EncodeParameters) (res interface{})
 	Writer    func(w io.Writer, ti typeInfo, buf []byte, encoding msdsn.EncodeParameters) (err error)
+
+	DeclTypeId uint8 // if non-zero, makeDecl() uses this instead of TypeId
 }
 
 // Common Language Runtime (CLR) Instances
@@ -245,6 +248,9 @@ func writeVarLen(w io.Writer, ti *typeInfo, out bool, encoding msdsn.EncodeParam
 				return
 			}
 		}
+	case typeJson:
+		// JSON type uses PLP format with no size indicator in metadata
+		ti.Writer = writePLPType
 	case typeText, typeImage, typeNText, typeVariant:
 		// LONGLEN_TYPE
 		if err = binary.Write(w, binary.LittleEndian, uint32(ti.Size)); err != nil {
@@ -772,6 +778,8 @@ func readPLPType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.E
 		return bytesToDecode
 	case typeNVarChar, typeNChar, typeNText:
 		return decodeNChar(bytesToDecode)
+	case typeJson:
+		return decodeNChar(bytesToDecode)
 	case typeUdt:
 		return decodeUdt(*ti, bytesToDecode)
 	}
@@ -860,6 +868,8 @@ func readVarLen(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.En
 		ti.UdtInfo.AssemblyQualifiedName = r.UsVarChar()
 
 		ti.Buffer = make([]byte, ti.Size)
+		ti.Reader = readPLPType
+	case typeJson:
 		ti.Reader = readPLPType
 	case typeBigVarBin, typeBigVarChar, typeBigBinary, typeBigChar,
 		typeNVarChar, typeNChar:
@@ -1213,12 +1223,23 @@ func makeGoLangScanType(ti typeInfo) reflect.Type {
 		return reflect.TypeOf(nil)
 	case typeUdt:
 		return reflect.TypeOf([]byte{})
+	case typeJson:
+		return reflect.TypeOf("")
 	default:
 		panic(fmt.Sprintf("not implemented makeGoLangScanType for type %d", ti.TypeId))
 	}
 }
 
 func makeDecl(ti typeInfo) string {
+	// If DeclTypeId is set, use it to override the wire type for declaration.
+	// This allows the server to recognize JSON parameters when the wire format
+	// is NVarChar but the declared type should be json.
+	if ti.DeclTypeId != 0 {
+		switch ti.DeclTypeId {
+		case typeJson:
+			return "json"
+		}
+	}
 	switch ti.TypeId {
 	case typeNull:
 		// maybe we should use something else here
@@ -1333,6 +1354,8 @@ func makeDecl(ti typeInfo) string {
 		return ti.UdtInfo.TypeName
 	case typeImage:
 		return "image"
+	case typeJson:
+		return "json"
 	case typeGuid:
 		return "uniqueidentifier"
 	case typeTvp:
@@ -1449,6 +1472,8 @@ func makeGoLangTypeName(ti typeInfo) string {
 		return "BINARY"
 	case typeUdt:
 		return strings.ToUpper(ti.UdtInfo.TypeName)
+	case typeJson:
+		return "JSON"
 	default:
 		panic(fmt.Sprintf("not implemented makeGoLangTypeName for type %d", ti.TypeId))
 	}
@@ -1573,6 +1598,9 @@ func makeGoLangTypeLength(ti typeInfo) (int64, bool) {
 		return 0, false
 	case typeBigBinary:
 		return int64(ti.Size), true
+	case typeJson:
+		// JSON uses nvarchar(max) wire format; same max length as typeNVarChar PLP
+		return 2147483645 / 2, true
 	case typeUdt:
 		switch ti.UdtInfo.TypeName {
 		case "hierarchyid":
@@ -1699,6 +1727,8 @@ func makeGoLangTypePrecisionScale(ti typeInfo) (int64, int64, bool) {
 	case typeBigBinary:
 		return 0, 0, false
 	case typeUdt:
+		return 0, 0, false
+	case typeJson:
 		return 0, 0, false
 	default:
 		panic(fmt.Sprintf("not implemented makeGoLangTypePrecisionScale for type %d", ti.TypeId))
