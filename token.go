@@ -1268,7 +1268,7 @@ func (t tokenProcessor) nextToken() (tokenStruct, error) {
 
 		// first lets finish reading current response and look
 		// for confirmation in it
-		if readCancelConfirmation(t.tokChan) {
+		if readCancelConfirmation(t.ctx, t.tokChan) {
 			// we got confirmation in current response
 			return nil, t.ctx.Err()
 		}
@@ -1276,7 +1276,7 @@ func (t tokenProcessor) nextToken() (tokenStruct, error) {
 		// read one more response, it must be there
 		t.tokChan = make(chan tokenStruct, 5)
 		go processSingleResponse(t.ctx, t.sess, t.tokChan, t.outs)
-		if readCancelConfirmation(t.tokChan) {
+		if readCancelConfirmation(t.ctx, t.tokChan) {
 			return nil, t.ctx.Err()
 		}
 		// we did not get cancellation confirmation, something is not
@@ -1285,17 +1285,20 @@ func (t tokenProcessor) nextToken() (tokenStruct, error) {
 	}
 }
 
-func readCancelConfirmation(tokChan chan tokenStruct) bool {
-	for tok := range tokChan {
-		switch tok := tok.(type) {
-		default:
-		// just skip token
-		case doneStruct:
-			if tok.Status&doneAttn != 0 {
-				// got cancellation confirmation, exit
-				return true
+func readCancelConfirmation(ctx context.Context, tokChan chan tokenStruct) bool {
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case tok, ok := <-tokChan:
+			if !ok {
+				return false
+			}
+			if done, isDone := tok.(doneStruct); isDone {
+				if done.Status&doneAttn != 0 {
+					return true
+				}
 			}
 		}
 	}
-	return false
 }

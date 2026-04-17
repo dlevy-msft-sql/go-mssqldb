@@ -2,6 +2,7 @@ package mssql
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"testing"
 
@@ -140,4 +141,46 @@ func TestRWCBuffer_MultipleReads(t *testing.T) {
 	n3, err3 := rwc.Read(buf3)
 	assert.Equal(t, 0, n3, "Third Read() n")
 	assert.Equal(t, io.EOF, err3, "Third Read() error")
+}
+
+func TestReadCancelConfirmation_Success(t *testing.T) {
+	t.Parallel()
+	tokChan := make(chan tokenStruct, 1)
+	tokChan <- doneStruct{Status: doneAttn}
+	result := readCancelConfirmation(context.Background(), tokChan)
+	if !result {
+		t.Fatal("expected true when doneAttn token is received")
+	}
+}
+
+func TestReadCancelConfirmation_ChannelClosedWithoutConfirmation(t *testing.T) {
+	t.Parallel()
+	tokChan := make(chan tokenStruct)
+	close(tokChan)
+	result := readCancelConfirmation(context.Background(), tokChan)
+	if result {
+		t.Fatal("expected false when channel is closed without confirmation")
+	}
+}
+
+func TestReadCancelConfirmation_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	tokChan := make(chan tokenStruct) // never sends
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := readCancelConfirmation(ctx, tokChan)
+	if result {
+		t.Fatal("expected false when context is cancelled")
+	}
+}
+
+func TestReadCancelConfirmation_SkipsNonDoneTokens(t *testing.T) {
+	t.Parallel()
+	tokChan := make(chan tokenStruct, 2)
+	tokChan <- orderStruct{}                    // non-done token, should be skipped
+	tokChan <- doneStruct{Status: doneAttn}     // confirmation
+	result := readCancelConfirmation(context.Background(), tokChan)
+	if !result {
+		t.Fatal("expected true after skipping non-done token")
+	}
 }
