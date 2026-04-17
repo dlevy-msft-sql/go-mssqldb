@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -182,5 +183,32 @@ func TestReadCancelConfirmation_SkipsNonDoneTokens(t *testing.T) {
 	result := readCancelConfirmation(context.Background(), tokChan)
 	if !result {
 		t.Fatal("expected true after skipping non-done token")
+	}
+}
+
+func TestReadCancelConfirmation_DrainSucceedsAfterDelay(t *testing.T) {
+	t.Parallel()
+	tokChan := make(chan tokenStruct)
+	// Simulate server sending confirmation after a short delay
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		tokChan <- doneStruct{Status: doneAttn}
+	}()
+	drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result := readCancelConfirmation(drainCtx, tokChan)
+	if !result {
+		t.Fatal("expected true when confirmation arrives within drain timeout")
+	}
+}
+
+func TestReadCancelConfirmation_DrainTimesOut(t *testing.T) {
+	t.Parallel()
+	tokChan := make(chan tokenStruct) // never sends
+	drainCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	result := readCancelConfirmation(drainCtx, tokChan)
+	if result {
+		t.Fatal("expected false when drain context times out")
 	}
 }

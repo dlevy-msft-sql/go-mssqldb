@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/golang-sql/sqlexp"
 	"github.com/microsoft/go-mssqldb/aecmk"
@@ -1266,17 +1267,24 @@ func (t tokenProcessor) nextToken() (tokenStruct, error) {
 		// in this case current response would not contain confirmation
 		// and we would need to read one more response
 
+		// Use a separate drain context since t.ctx is already cancelled.
+		// This gives the server time to send the cancellation acknowledgement
+		// so the connection can be safely reused. If draining times out,
+		// the connection will be marked bad via the ServerError return below.
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer drainCancel()
+
 		// first lets finish reading current response and look
 		// for confirmation in it
-		if readCancelConfirmation(t.ctx, t.tokChan) {
+		if readCancelConfirmation(drainCtx, t.tokChan) {
 			// we got confirmation in current response
 			return nil, t.ctx.Err()
 		}
 		// we did not get cancellation confirmation in the current response
 		// read one more response, it must be there
 		t.tokChan = make(chan tokenStruct, 5)
-		go processSingleResponse(t.ctx, t.sess, t.tokChan, t.outs)
-		if readCancelConfirmation(t.ctx, t.tokChan) {
+		go processSingleResponse(drainCtx, t.sess, t.tokChan, t.outs)
+		if readCancelConfirmation(drainCtx, t.tokChan) {
 			return nil, t.ctx.Err()
 		}
 		// we did not get cancellation confirmation, something is not
