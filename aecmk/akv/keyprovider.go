@@ -240,11 +240,13 @@ func (p *Provider) allowedPathAndEndpoint(masterKeyPath string) (endpoint string
 		allowed = false
 		return
 	}
+	// Use Hostname() to strip port (e.g. ":443") for comparison and endpoint
+	hostname := url.Hostname()
 	if !allowed {
 
 	loop:
 		for _, l := range p.AllowedLocations {
-			if strings.HasSuffix(strings.ToLower(url.Host), strings.ToLower(l)) {
+			if strings.HasSuffix(strings.ToLower(hostname), strings.ToLower(l)) {
 				allowed = true
 				break loop
 			}
@@ -257,6 +259,8 @@ func (p *Provider) allowedPathAndEndpoint(masterKeyPath string) (endpoint string
 			return
 		}
 		keypath = pathParts[1:]
+		// Reconstruct endpoint without port to avoid Azure SDK challenge verification issues
+		url.Host = hostname
 		url.Path = ""
 		url.RawQuery = ""
 		url.Fragment = ""
