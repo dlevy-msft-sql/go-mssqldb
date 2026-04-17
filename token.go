@@ -1170,8 +1170,18 @@ type tokenProcessor struct {
 }
 
 func startReading(sess *tdsSession, ctx context.Context, outs outputs) *tokenProcessor {
+	// Wait for any previous reader goroutine to finish to prevent
+	// concurrent reads on the session buffer.
+	if sess.readDone != nil {
+		<-sess.readDone
+	}
+	readDone := make(chan struct{})
+	sess.readDone = readDone
 	tokChan := make(chan tokenStruct, 5)
-	go processSingleResponse(ctx, sess, tokChan, outs)
+	go func() {
+		defer close(readDone)
+		processSingleResponse(ctx, sess, tokChan, outs)
+	}()
 	return &tokenProcessor{
 		tokChan: tokChan,
 		ctx:     ctx,
@@ -1274,8 +1284,16 @@ func (t tokenProcessor) nextToken() (tokenStruct, error) {
 		}
 		// we did not get cancellation confirmation in the current response
 		// read one more response, it must be there
+		if t.sess.readDone != nil {
+			<-t.sess.readDone
+		}
+		readDone := make(chan struct{})
+		t.sess.readDone = readDone
 		t.tokChan = make(chan tokenStruct, 5)
-		go processSingleResponse(t.ctx, t.sess, t.tokChan, t.outs)
+		go func() {
+			defer close(readDone)
+			processSingleResponse(t.ctx, t.sess, t.tokChan, t.outs)
+		}()
 		if readCancelConfirmation(t.tokChan) {
 			return nil, t.ctx.Err()
 		}
