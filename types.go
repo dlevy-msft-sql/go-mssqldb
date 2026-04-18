@@ -103,8 +103,6 @@ type typeInfo struct {
 	XmlInfo   xmlInfo
 	Reader    func(ti *typeInfo, r *tdsBuffer, cryptoMeta *cryptoMetadata, encoding msdsn.EncodeParameters) (res interface{})
 	Writer    func(w io.Writer, ti typeInfo, buf []byte, encoding msdsn.EncodeParameters) (err error)
-
-	DeclTypeId uint8 // if non-zero, makeDecl() uses this instead of TypeId
 }
 
 // Common Language Runtime (CLR) Instances
@@ -249,7 +247,10 @@ func writeVarLen(w io.Writer, ti *typeInfo, out bool, encoding msdsn.EncodeParam
 			}
 		}
 	case typeJson:
-		// JSON type uses PLP format with no size indicator in metadata
+		// JSON TYPE_INFO has no USHORTMAXLEN field, unlike nvarchar/varchar which
+		// write a 2-byte max-length prefix. The type byte (0xF4) is followed
+		// directly by PLP data with no size indicator. Confirmed by SqlClient:
+		// TDSExecuteRPCAddParameter skips USHORTMAXLEN for XML and JSON types.
 		ti.Writer = writePLPType
 	case typeText, typeImage, typeNText, typeVariant:
 		// LONGLEN_TYPE
@@ -779,9 +780,9 @@ func readPLPType(ti *typeInfo, r *tdsBuffer, c *cryptoMetadata, encoding msdsn.E
 	case typeNVarChar, typeNChar, typeNText:
 		return decodeNChar(bytesToDecode)
 	case typeJson:
-		// JSON is sent as UTF-8 on the wire, matching SqlClient and JDBC.
-		// Go strings are natively UTF-8, so direct conversion is correct.
-		return string(bytesToDecode)
+		// Server→client: SQL Server sends JSON result set data as UTF-16LE,
+		// consistent with XML and nvarchar. See encoding note on makeJsonParam.
+		return decodeUcs2(bytesToDecode)
 	case typeUdt:
 		return decodeUdt(*ti, bytesToDecode)
 	}
@@ -1233,15 +1234,6 @@ func makeGoLangScanType(ti typeInfo) reflect.Type {
 }
 
 func makeDecl(ti typeInfo) string {
-	// If DeclTypeId is set, use it to override the wire type for declaration.
-	// This allows the server to recognize JSON parameters when the wire format
-	// is NVarChar but the declared type should be json.
-	if ti.DeclTypeId != 0 {
-		switch ti.DeclTypeId {
-		case typeJson:
-			return "json"
-		}
-	}
 	switch ti.TypeId {
 	case typeNull:
 		// maybe we should use something else here

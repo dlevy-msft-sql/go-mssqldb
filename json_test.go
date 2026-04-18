@@ -4,8 +4,10 @@
 package mssql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -841,41 +843,95 @@ func TestJSONMarshalUnmarshal(t *testing.T) {
 	})
 }
 
-// TestJSONWireDecoding tests that JSON data can be decoded from UTF-8 wire format.
-// SQL Server 2025 sends JSON as UTF-8, matching SqlClient and JDBC behavior.
+// TestJSONWireDecoding tests that JSON data received from SQL Server as UTF-16LE
+// is correctly decoded to a Go UTF-8 string. SQL Server sends JSON column data
+// as UTF-16LE on the wire (consistent with XML and nvarchar types).
+//
+// This test exercises the actual readPLPType code path by constructing a TDS buffer
+// with PLP-framed UTF-16LE data and calling readPLPType with typeJson, verifying
+// the full decode pipeline rather than just str2ucs2/decodeUcs2 round-trip.
 func TestJSONWireDecoding(t *testing.T) {
-	// Test decoding UTF-8 encoded JSON (Go strings are natively UTF-8)
-	jsonStr := `{"key":"value"}`
-	utf8Data := []byte(jsonStr)
-
-	decoded := string(utf8Data)
-	if decoded != jsonStr {
-		t.Errorf("Expected decoded JSON %q, got %q", jsonStr, decoded)
+	tests := []struct {
+		name string
+		json string
+	}{
+		{"simple", `{"key":"value"}`},
+		{"complex", `{"name":"test","value":123,"nested":{"array":[1,2,3]}}`},
+		{"empty", `{}`},
+		{"unicode", `{"emoji":"😀","cjk":"中文"}`},
 	}
 
-	// Test with more complex JSON
-	complexJSON := `{"name":"test","value":123,"nested":{"array":[1,2,3]}}`
-	utf8Complex := []byte(complexJSON)
-	decodedComplex := string(utf8Complex)
-	if decodedComplex != complexJSON {
-		t.Errorf("Expected decoded JSON %q, got %q", complexJSON, decodedComplex)
+	for _, tt := range tests {
+		t.Run(tt.name+"_roundtrip", func(t *testing.T) {
+			// Verify str2ucs2/decodeUcs2 round-trip (baseline correctness)
+			utf16Data := str2ucs2(tt.json)
+			decoded := decodeUcs2(utf16Data)
+			if decoded != tt.json {
+				t.Errorf("Expected decoded JSON %q, got %q", tt.json, decoded)
+			}
+		})
+
+		t.Run(tt.name+"_readPLPType", func(t *testing.T) {
+			// Build PLP-framed data as SQL Server would send it:
+			//   uint64 total size (or 0xFFFFFFFFFFFFFFFE for unknown)
+			//   uint32 chunk length
+			//   []byte chunk data
+			//   uint32 0 (terminator)
+			utf16Data := str2ucs2(tt.json)
+
+			// Calculate total PLP frame size: 8 (total) + 4 (chunk len) + data + 4 (terminator)
+			var plpBuf bytes.Buffer
+			// Total length (known)
+			totalLen := uint64(len(utf16Data))
+			_ = binary.Write(&plpBuf, binary.LittleEndian, totalLen)
+			// Single chunk
+			_ = binary.Write(&plpBuf, binary.LittleEndian, uint32(len(utf16Data)))
+			plpBuf.Write(utf16Data)
+			// Terminator
+			_ = binary.Write(&plpBuf, binary.LittleEndian, uint32(0))
+
+			frameBytes := plpBuf.Bytes()
+			r := &tdsBuffer{
+				packetSize: len(frameBytes) + 100,
+				rbuf:       frameBytes,
+				rpos:       0,
+				rsize:      len(frameBytes),
+			}
+
+			ti := &typeInfo{TypeId: typeJson}
+			result := readPLPType(ti, r, nil, msdsn.EncodeParameters{})
+			if result == nil {
+				t.Fatal("readPLPType returned nil")
+			}
+			str, ok := result.(string)
+			if !ok {
+				t.Fatalf("readPLPType returned %T, expected string", result)
+			}
+			if str != tt.json {
+				t.Errorf("readPLPType decoded %q, expected %q", str, tt.json)
+			}
+		})
 	}
 
-	// Test empty JSON object
-	emptyJSON := `{}`
-	utf8Empty := []byte(emptyJSON)
-	decodedEmpty := string(utf8Empty)
-	if decodedEmpty != emptyJSON {
-		t.Errorf("Expected decoded JSON %q, got %q", emptyJSON, decodedEmpty)
-	}
+	t.Run("null_readPLPType", func(t *testing.T) {
+		// PLP NULL sentinel: uint64(0xFFFFFFFFFFFFFFFF)
+		var plpBuf bytes.Buffer
+		_ = binary.Write(&plpBuf, binary.LittleEndian, uint64(0xFFFFFFFFFFFFFFFF))
 
-	// Test with Unicode content (UTF-8 multi-byte)
-	unicodeJSON := `{"emoji":"😀","cjk":"中文"}`
-	utf8Unicode := []byte(unicodeJSON)
-	decodedUnicode := string(utf8Unicode)
-	if decodedUnicode != unicodeJSON {
-		t.Errorf("Expected decoded JSON %q, got %q", unicodeJSON, decodedUnicode)
-	}
+		frameBytes := plpBuf.Bytes()
+		r := &tdsBuffer{
+			packetSize: len(frameBytes) + 100,
+			rbuf:       frameBytes,
+			rpos:       0,
+			rsize:      len(frameBytes),
+		}
+
+		ti := &typeInfo{TypeId: typeJson}
+		result := readPLPType(ti, r, nil, msdsn.EncodeParameters{})
+		if result != nil {
+			t.Errorf("readPLPType for NULL should return nil, got %v", result)
+		}
+	})
 }
 
 // TestJSONTypeFunctions tests all type-related functions for JSON type.
@@ -887,15 +943,6 @@ func TestJSONTypeFunctions(t *testing.T) {
 		decl := makeDecl(ti)
 		if decl != "json" {
 			t.Errorf("Expected makeDecl to return 'json', got: %s", decl)
-		}
-	})
-
-	t.Run("makeDecl with DeclTypeId", func(t *testing.T) {
-		// Test DeclTypeId override - when TypeId is nvarchar but DeclTypeId is json
-		tiWithDecl := typeInfo{TypeId: typeNVarChar, DeclTypeId: typeJson, Size: 0}
-		decl := makeDecl(tiWithDecl)
-		if decl != "json" {
-			t.Errorf("Expected makeDecl with DeclTypeId to return 'json', got: %s", decl)
 		}
 	})
 
@@ -984,6 +1031,75 @@ func TestFeatureExtJsonSupport(t *testing.T) {
 	})
 }
 
+// TestParseFeatureExtAckJSON tests that parseFeatureExtAck correctly parses
+// a JSON support acknowledgement from the server's feature ext ack response.
+func TestParseFeatureExtAckJSON(t *testing.T) {
+	t.Run("JSON ack with version 1", func(t *testing.T) {
+		// Wire format: feature_id(1) + data_length(4) + data(1) + terminator(1)
+		// 0x0D = featExtJSONSUPPORT, length=1, version=0x01, 0xFF=terminator
+		data := []byte{0x0D, 0x01, 0x00, 0x00, 0x00, 0x01, 0xFF}
+		r := &tdsBuffer{
+			packetSize: len(data) + 10,
+			rbuf:       data,
+			rpos:       0,
+			rsize:      len(data),
+		}
+		ack := parseFeatureExtAck(r)
+		v, ok := ack[featExtJSONSUPPORT]
+		if !ok {
+			t.Fatal("Expected featExtJSONSUPPORT in ack map")
+		}
+		version, ok := v.(byte)
+		if !ok {
+			t.Fatalf("Expected byte value, got %T", v)
+		}
+		if version != jsonSupportVersion {
+			t.Errorf("Expected version %#x, got %#x", jsonSupportVersion, version)
+		}
+	})
+
+	t.Run("JSON ack with zero length (malformed)", func(t *testing.T) {
+		// Malformed: feature_id=0x0D, length=0, terminator
+		// Should silently skip, resulting in no JSON entry in the ack map.
+		data := []byte{0x0D, 0x00, 0x00, 0x00, 0x00, 0xFF}
+		r := &tdsBuffer{
+			packetSize: len(data) + 10,
+			rbuf:       data,
+			rpos:       0,
+			rsize:      len(data),
+		}
+		ack := parseFeatureExtAck(r)
+		if _, ok := ack[featExtJSONSUPPORT]; ok {
+			t.Error("Expected no featExtJSONSUPPORT entry for zero-length ack")
+		}
+	})
+
+	t.Run("JSON ack combined with column encryption", func(t *testing.T) {
+		// Column encryption (0x04) ack with version=1, no enclave, then JSON ack
+		data := []byte{
+			// Column encryption: feature=0x04, length=1, version=1
+			0x04, 0x01, 0x00, 0x00, 0x00, 0x01,
+			// JSON support: feature=0x0D, length=1, version=1
+			0x0D, 0x01, 0x00, 0x00, 0x00, 0x01,
+			// Terminator
+			0xFF,
+		}
+		r := &tdsBuffer{
+			packetSize: len(data) + 10,
+			rbuf:       data,
+			rpos:       0,
+			rsize:      len(data),
+		}
+		ack := parseFeatureExtAck(r)
+		if _, ok := ack[featExtJSONSUPPORT]; !ok {
+			t.Error("Expected featExtJSONSUPPORT in ack map")
+		}
+		if _, ok := ack[featExtCOLUMNENCRYPTION]; !ok {
+			t.Error("Expected featExtCOLUMNENCRYPTION in ack map")
+		}
+	})
+}
+
 // TestMakeParamJSON tests the makeParam function with JSON types.
 // This covers the JSON, NullJSON, *JSON, and *NullJSON cases in mssql.go.
 func TestMakeParamJSON(t *testing.T) {
@@ -998,12 +1114,14 @@ func TestMakeParamJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(JSON) returned error: %v", err)
 		}
-		// JSON uses nvarchar wire format with json type declaration
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
+		// With server JSON support, uses native JSON type with UTF-8 encoding
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		// Buffer should be UTF-8 encoded
+		expected := []byte(`{"test":"value"}`)
+		if !bytes.Equal(param.buffer, expected) {
+			t.Errorf("Expected UTF-8 buffer %v, got %v", expected, param.buffer)
 		}
 	})
 
@@ -1014,12 +1132,8 @@ func TestMakeParamJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(nil JSON) returned error: %v", err)
 		}
-		// JSON uses nvarchar wire format with json type declaration
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 		// nil JSON should produce NULL (nil buffer), not empty string
 		if param.buffer != nil {
@@ -1033,14 +1147,16 @@ func TestMakeParamJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(NullJSON) returned error: %v", err)
 		}
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 		if param.buffer == nil {
 			t.Error("Expected non-nil buffer for valid NullJSON")
+		}
+		// Buffer should be UTF-8 encoded
+		expected := []byte(`{"valid":true}`)
+		if !bytes.Equal(param.buffer, expected) {
+			t.Errorf("Expected UTF-8 buffer %v, got %v", expected, param.buffer)
 		}
 	})
 
@@ -1050,11 +1166,8 @@ func TestMakeParamJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(NullJSON null) returned error: %v", err)
 		}
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 		if param.buffer != nil {
 			t.Error("Expected nil buffer for NULL NullJSON")
@@ -1072,11 +1185,8 @@ func TestMakeParamJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(converted JSON) returned error: %v", err)
 		}
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 	})
 
@@ -1092,11 +1202,8 @@ func TestMakeParamJSON(t *testing.T) {
 			t.Fatalf("makeParam(converted nil JSON) returned error: %v", err)
 		}
 		// nil *JSON should produce a JSON-typed NULL
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 		if param.buffer != nil {
 			t.Error("Expected nil buffer for nil *JSON")
@@ -1114,11 +1221,8 @@ func TestMakeParamJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(converted NullJSON) returned error: %v", err)
 		}
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 	})
 
@@ -1134,11 +1238,8 @@ func TestMakeParamJSON(t *testing.T) {
 			t.Fatalf("makeParam(converted nil NullJSON) returned error: %v", err)
 		}
 		// nil *NullJSON should produce a JSON-typed NULL
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 		if param.buffer != nil {
 			t.Error("Expected nil buffer for nil *NullJSON")
@@ -1159,12 +1260,8 @@ func TestMakeParamJSONWithoutServerSupport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(JSON) returned error: %v", err)
 		}
-		// Without server support, TypeId is nvarchar but DeclTypeId should not be set
 		if param.ti.TypeId != typeNVarChar {
 			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != 0 {
-			t.Errorf("Expected DeclTypeId 0 without server support, got %#x", param.ti.DeclTypeId)
 		}
 	})
 
@@ -1176,9 +1273,6 @@ func TestMakeParamJSONWithoutServerSupport(t *testing.T) {
 		}
 		if param.ti.TypeId != typeNVarChar {
 			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != 0 {
-			t.Errorf("Expected DeclTypeId 0 without server support, got %#x", param.ti.DeclTypeId)
 		}
 	})
 }
@@ -1197,11 +1291,8 @@ func TestJSONEmptyNonNil(t *testing.T) {
 		if err != nil {
 			t.Fatalf("makeParam(JSON(\"\")) returned error: %v", err)
 		}
-		if param.ti.TypeId != typeNVarChar {
-			t.Errorf("Expected TypeId %#x (nvarchar), got %#x", typeNVarChar, param.ti.TypeId)
-		}
-		if param.ti.DeclTypeId != typeJson {
-			t.Errorf("Expected DeclTypeId %#x (json), got %#x", typeJson, param.ti.DeclTypeId)
+		if param.ti.TypeId != typeJson {
+			t.Errorf("Expected TypeId %#x (json), got %#x", typeJson, param.ti.TypeId)
 		}
 		if param.buffer != nil {
 			t.Error("Expected nil buffer for empty JSON (should be SQL NULL)")
@@ -1222,10 +1313,13 @@ func TestJSONEmptyNonNil(t *testing.T) {
 }
 
 // TestBulkCopyJSONMakeParam tests the Bulk.makeParam function for JSON columns.
+// In BulkCopy, JSON columns are converted to typeNVarChar in the metadata step,
+// so data flows through the nvarchar case and is encoded as UTF-16LE.
 func TestBulkCopyJSONMakeParam(t *testing.T) {
 	b := &Bulk{}
+	// BulkCopy converts typeJson to typeNVarChar for wire metadata
 	col := columnStruct{
-		ti: typeInfo{TypeId: typeJson},
+		ti: typeInfo{TypeId: typeNVarChar},
 	}
 
 	t.Run("string value", func(t *testing.T) {
@@ -1233,10 +1327,10 @@ func TestBulkCopyJSONMakeParam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Bulk.makeParam(string) returned error: %v", err)
 		}
-		// JSON bulk copy uses UTF-16LE encoding like NVarChar
+		// JSON bulk copy uses UTF-16LE encoding (string → UCS-2/UTF-16LE bytes)
 		expected := str2ucs2(`{"key":"value"}`)
-		if len(param.buffer) != len(expected) {
-			t.Errorf("Expected buffer length %d, got %d", len(expected), len(param.buffer))
+		if !bytes.Equal(param.buffer, expected) {
+			t.Errorf("Expected UTF-16LE buffer %v, got %v", expected, param.buffer)
 		}
 		if param.ti.Size != len(expected) {
 			t.Errorf("Expected ti.Size %d, got %d", len(expected), param.ti.Size)
@@ -1248,16 +1342,164 @@ func TestBulkCopyJSONMakeParam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Bulk.makeParam([]byte) returned error: %v", err)
 		}
-		expected := str2ucs2(`{"key":"bytes"}`)
-		if len(param.buffer) != len(expected) {
-			t.Errorf("Expected buffer length %d, got %d", len(expected), len(param.buffer))
+		// []byte goes through as raw bytes (not converted to UTF-16LE)
+		expected := []byte(`{"key":"bytes"}`)
+		if !bytes.Equal(param.buffer, expected) {
+			t.Errorf("Expected raw buffer %v, got %v", expected, param.buffer)
 		}
 	})
 
 	t.Run("unsupported type", func(t *testing.T) {
-		_, err := b.makeParam(12345, col)
+		_, err := b.makeParam(complex(1, 2), col)
 		if err == nil {
-			t.Error("Expected error for unsupported type in JSON bulk copy")
+			t.Error("Expected error for unsupported type in nvarchar bulk copy")
 		}
 	})
+}
+
+// TestBulkCopyJSONIntegration tests BulkCopy with native JSON columns on SQL Server 2025+.
+// Verifies the full pipeline: sendBulkCommand converts JSON to nvarchar(max),
+// data flows as UTF-16LE nvarchar, and SQL Server converts to JSON for storage.
+func TestBulkCopyJSONIntegration(t *testing.T) {
+	jtc := setupJSONTest(t, true) // requires native JSON
+
+	// Use a single connection so the temp table is visible to all operations.
+	conn := jtc.conn()
+
+	tableName := "#test_bulkcopy_json"
+	_, err := conn.ExecContext(jtc.ctx, "CREATE TABLE "+tableName+" (id int, data json)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	// Prepare test data - includes a NULL row to verify the NULL path
+	testRows := []struct {
+		id   int
+		data interface{} // nil for NULL
+	}{
+		{1, `{"name":"alice","age":30}`},
+		{2, `{"name":"bob","scores":[100,95,87]}`},
+		{3, nil}, // NULL JSON value
+		{4, `{"emoji":"😀","cjk":"中文","mixed":"hello 世界"}`},
+	}
+
+	// BulkCopy insert via transaction on the pinned connection
+	txn, err := conn.BeginTx(jtc.ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx failed: %v", err)
+	}
+
+	stmt, err := txn.PrepareContext(jtc.ctx, CopyIn(tableName, BulkOptions{}, "id", "data"))
+	if err != nil {
+		t.Fatalf("PrepareContext CopyIn failed: %v", err)
+	}
+
+	for _, row := range testRows {
+		_, err = stmt.ExecContext(jtc.ctx, row.id, row.data)
+		if err != nil {
+			t.Fatalf("Exec row %d failed: %v", row.id, err)
+		}
+	}
+	_, err = stmt.ExecContext(jtc.ctx) // flush
+	if err != nil {
+		t.Fatalf("Exec flush failed: %v", err)
+	}
+	stmt.Close()
+	err = txn.Commit()
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	// Read back and verify on the same connection
+	rows, err := conn.QueryContext(jtc.ctx, "SELECT id, data FROM "+tableName+" ORDER BY id")
+	if err != nil {
+		t.Fatalf("SELECT failed: %v", err)
+	}
+	defer rows.Close()
+
+	idx := 0
+	for rows.Next() {
+		var id int
+		var data sql.NullString
+		if err := rows.Scan(&id, &data); err != nil {
+			t.Fatalf("Scan row %d failed: %v", idx, err)
+		}
+		if idx >= len(testRows) {
+			t.Fatalf("More rows returned than expected")
+		}
+		if id != testRows[idx].id {
+			t.Errorf("Row %d: expected id %d, got %d", idx, testRows[idx].id, id)
+		}
+		if testRows[idx].data == nil {
+			// Expect NULL
+			if data.Valid {
+				t.Errorf("Row %d: expected NULL, got %s", idx, data.String)
+			}
+		} else {
+			if !data.Valid {
+				t.Errorf("Row %d: expected non-NULL value, got NULL", idx)
+			} else {
+				// Normalize whitespace for comparison: SQL Server may reformat JSON
+				var expected, actual interface{}
+				json.Unmarshal([]byte(testRows[idx].data.(string)), &expected)
+				json.Unmarshal([]byte(data.String), &actual)
+				expectedBytes, _ := json.Marshal(expected)
+				actualBytes, _ := json.Marshal(actual)
+				if !bytes.Equal(expectedBytes, actualBytes) {
+					t.Errorf("Row %d: JSON mismatch\n  expected: %s\n  actual:   %s", idx, testRows[idx].data, data.String)
+				}
+			}
+		}
+		idx++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows iteration error: %v", err)
+	}
+	if idx != len(testRows) {
+		t.Errorf("Expected %d rows, got %d", len(testRows), idx)
+	}
+}
+
+// TestJSONOutputParameterViaNvarchar tests JSON content passed through nvarchar
+// output parameters from stored procedures. The procedure uses nvarchar(max)
+// parameters because stored procedure JSON type parameters are a separate feature.
+func TestJSONOutputParameterViaNvarchar(t *testing.T) {
+	jtc := setupJSONTest(t, true) // requires native JSON
+
+	// Use a single connection so the temp stored procedure is visible.
+	conn := jtc.conn()
+
+	// Create a stored procedure that outputs JSON via an nvarchar output param.
+	procName := "#test_json_output_proc"
+	_, err := conn.ExecContext(jtc.ctx, `
+		CREATE PROCEDURE `+procName+` @input nvarchar(max), @output nvarchar(max) OUTPUT
+		AS
+		BEGIN
+			SET @output = JSON_MODIFY(@input, '$.added', 'by_proc')
+		END
+	`)
+	if err != nil {
+		t.Fatalf("CREATE PROCEDURE failed: %v", err)
+	}
+
+	var output string
+	_, err = conn.ExecContext(jtc.ctx, procName,
+		sql.Named("input", `{"key":"value"}`),
+		sql.Named("output", sql.Out{Dest: &output}),
+	)
+	if err != nil {
+		t.Fatalf("ExecContext failed: %v", err)
+	}
+
+	// Verify the output contains the modification
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("Failed to parse output JSON %q: %v", output, err)
+	}
+	if result["key"] != "value" {
+		t.Errorf("Expected key=value, got key=%v", result["key"])
+	}
+	if result["added"] != "by_proc" {
+		t.Errorf("Expected added=by_proc, got added=%v", result["added"])
+	}
 }

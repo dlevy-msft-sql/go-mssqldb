@@ -455,7 +455,10 @@ func (e featureExts) toBytes() []byte {
 	if len(e.features) == 0 {
 		return nil
 	}
-	// Sort feature IDs for deterministic ordering in the login packet
+	// Sort feature IDs for deterministic ordering in the login packet.
+	// Go maps iterate in random order, which caused login packet tests to be
+	// non-reproducible once multiple feature extensions (column encryption,
+	// JSON support) are registered. Sorting by feature ID ensures stable output.
 	featureIDs := make([]byte, 0, len(e.features))
 	for id := range e.features {
 		featureIDs = append(featureIDs, id)

@@ -606,7 +606,9 @@ func parseFeatureExtAck(r *tdsBuffer) featureExtAck {
 			}
 			ack[feature] = colAck
 		case featExtJSONSUPPORT:
-			// JSON support acknowledgement contains a version byte
+			// JSON support acknowledgement contains a version byte.
+			// If length == 0 (malformed ack), we intentionally skip storing
+			// the ack so the driver falls back to nvarchar(max) encoding.
 			if length >= 1 {
 				version := r.byte()
 				length--

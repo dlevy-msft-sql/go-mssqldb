@@ -239,16 +239,35 @@ func makeMoneyParam(val decimal.Decimal) (res param) {
 }
 
 // makeJsonParam creates a parameter for JSON/NullJSON types.
-// JSON uses nvarchar wire format with optional json type declaration.
+//
+// Encoding asymmetry (confirmed by SqlClient source and wire captures):
+//   - Client→server (RPC parameters): UTF-8 bytes via PLP, type 0xF4.
+//     SqlClient: Encoding.UTF8.GetBytes(value.ToString()) in WriteParameterVarLen.
+//   - Server→client (result set columns): UTF-16LE bytes via PLP, type 0xF4.
+//     Decoded by decodeUcs2 in readPLPType, same as XML and nvarchar.
+//
+// When the server does not support native JSON (pre-2025), falls back to
+// nvarchar(max) with UTF-16LE encoding in both directions.
+//
+// No client-side JSON validation is performed; the server validates JSON content
+// on insertion into JSON columns. This is consistent with SqlClient behavior.
+//
+// Note: valid=true with empty data produces SQL NULL (nil buffer), not an empty
+// string. An empty byte slice is not valid JSON content. This differs from
+// sql.NullString{String: "", Valid: true} which sends an empty string.
 func (s *Stmt) makeJsonParam(data []byte, valid bool) param {
 	res := param{}
-	res.ti.TypeId = typeNVarChar
-	res.ti.Size = 0 // Forces nvarchar(max) PLP format
 	if s.c != nil && s.c.sess != nil && s.c.sess.jsonSupported {
-		res.ti.DeclTypeId = typeJson
-	}
-	if valid && len(data) > 0 {
-		res.buffer = str2ucs2(string(data))
+		res.ti.TypeId = typeJson
+		if valid && len(data) > 0 {
+			res.buffer = data
+		}
+	} else {
+		res.ti.TypeId = typeNVarChar
+		res.ti.Size = 0 // Forces nvarchar(max) PLP format
+		if valid && len(data) > 0 {
+			res.buffer = str2ucs2(string(data))
+		}
 	}
 	return res
 }

@@ -147,6 +147,9 @@ func TestLoginWithSQLServerAuth(t *testing.T) {
 			fmt.Sprintf("12 01 00 2f 00 00 01 00  00 00 1a 00 06 01 00 20\n"+
 				"00 01 02 00 21 00 01 03  00 22 00 04 04 00 26 00\n"+
 				"01 ff %s             00 00  00 00 00 00 00 00 00\n", v),
+			// TypeFlags byte 3 = 0x10: fExtension bit set because we now always send
+			// feature extensions (JSON support). Packet length increased by 11 bytes
+			// for the featureExtJsonSupport payload (0x0D 0x01 + length + data + 0xFF).
 			fmt.Sprintf("10 01 00 d1 00 00 01 00  c9 00 00 00 04 00 00 74\n"+
 				"00 10 00 00 %s           %s 00 00 00 00\n"+
 				"A0 02 00 10 00 00 00 00  00 00 00 00 5e 00 09 00\n"+
@@ -211,6 +214,7 @@ func TestLoginWithSecurityTokenAuth(t *testing.T) {
 				"00 01 02 00 26 00 01 03  00 27 00 04 04 00 2B 00\n"+
 				"01 06 00 2c 00 01 ff %s           00 00 00 00 00\n"+
 				"00 00 00 00 01\n", v),
+			// See TestLoginWithSQLServerAuth for TypeFlags 0x10 explanation.
 			fmt.Sprintf("10 01 00 D5 00 00 01 00  CD 00 00 00 04 00 00 74\n"+
 				"00 10 00 00 %s           %s 00 00 00 00\n"+
 				"A0 02 00 10 00 00 00 00  00 00 00 00 5E 00 09 00\n"+
@@ -277,6 +281,7 @@ func TestLoginWithADALUsernamePasswordAuth(t *testing.T) {
 				"00 01 02 00 26 00 01 03  00 27 00 04 04 00 2B 00\n"+
 				"01 06 00 2C 00 01 ff %s  00 00 00 00 00\n"+
 				"00 00 00 00 01\n", v),
+			// See TestLoginWithSQLServerAuth for TypeFlags 0x10 explanation.
 			fmt.Sprintf("10 01 00 C4 00 00 01 00  bc 00 00 00 04 00 00 74\n"+
 				"00 10 00 00 %s           %s 00 00 00 00\n"+
 				"A0 02 00 10 00 00 00 00  00 00 00 00 5e 00 09 00\n"+
@@ -355,6 +360,7 @@ func TestLoginWithADALManagedIdentityAuth(t *testing.T) {
 				"00 01 02 00 26 00 01 03  00 27 00 04 04 00 2B 00\n"+
 				"01 06 00 2C 00 01 ff %s           00 00 00 00 00\n"+
 				"00 00 00 00 01\n", v),
+			// See TestLoginWithSQLServerAuth for TypeFlags 0x10 explanation.
 			fmt.Sprintf("10 01 00 c4 00 00 01 00  bc 00 00 00 04 00 00 74\n"+
 				"00 10 00 00 %s           %s 00 00 00 00\n"+
 				"A0 02 00 10 00 00 00 00  00 00 00 00 5e 00 09 00\n"+
