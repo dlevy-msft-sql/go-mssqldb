@@ -1217,6 +1217,20 @@ func (s *Stmt) makeParam(val driver.Value) (res param, err error) {
 		} else {
 			res.ti.TypeId = typeDateTimeN
 		}
+	case NullDate: // only null values reach here
+		res.buffer = []byte{}
+		res.ti.TypeId = typeDateN
+		res.ti.Size = 3
+	case NullDateTime: // only null values reach here
+		res.buffer = []byte{}
+		res.ti.TypeId = typeDateTime2N
+		res.ti.Scale = 7
+		res.ti.Size = 8
+	case NullTime: // only null values reach here
+		res.buffer = []byte{}
+		res.ti.TypeId = typeTimeN
+		res.ti.Scale = 7
+		res.ti.Size = 5
 	case driver.Valuer:
 		// We have a custom Valuer implementation with a nil value
 		return s.makeParam(nil)
