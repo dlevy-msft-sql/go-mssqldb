@@ -137,10 +137,10 @@ jobs:
           export DATABASE=master
           export HOST=localhost
           export SQLSERVER_DSN="sqlserver://${SQLUSER}:${SQLPASSWORD}@localhost:1433?database=${DATABASE}&trustServerCertificate=true"
-          # Skip BenchmarkSelectWithTypeMismatch: deadlocks on main branch
-          # (defer rows.Close() in loop with MaxOpenConns=1). Remove after fix merges.
+          # Skip pre-existing benchmarks that deadlock or run excessive real SQL queries.
+          # Remove BenchmarkSelectWithTypeMismatch skip after its fix merges to main.
           go test -run='^$' -bench='Benchmark' \
-            -skip='BenchmarkSelectWithTypeMismatch' \
+            -skip='BenchmarkSelectWithTypeMismatch|BenchmarkMessageQueue' \
             -benchtime=1s -count=3 -benchmem -timeout=30m . ./msdsn 2>&1 | \
             tee bench_new_full.log
           grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' bench_new_full.log > bench_new.txt
@@ -156,7 +156,7 @@ jobs:
           export HOST=localhost
           export SQLSERVER_DSN="sqlserver://${SQLUSER}:${SQLPASSWORD}@localhost:1433?database=${DATABASE}&trustServerCertificate=true"
           go test -run='^$' -bench='Benchmark' \
-            -skip='BenchmarkSelectWithTypeMismatch' \
+            -skip='BenchmarkSelectWithTypeMismatch|BenchmarkMessageQueue' \
             -benchtime=1s -count=3 -benchmem -timeout=30m . ./msdsn 2>&1 | \
             tee "$GITHUB_WORKSPACE/bench_old_full.log"
           grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' "$GITHUB_WORKSPACE/bench_old_full.log" > "$GITHUB_WORKSPACE/bench_old.txt"
