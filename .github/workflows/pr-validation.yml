@@ -139,8 +139,8 @@ jobs:
           export SQLSERVER_DSN="sqlserver://${SQLUSER}:${SQLPASSWORD}@localhost:1433?database=${DATABASE}&trustServerCertificate=true"
           go test -run='^$' -bench='Benchmark' -skip='BenchmarkMessageQueue' \
             -benchtime=1s -count=3 -benchmem -timeout=30m . ./msdsn 2>&1 | \
-            tee bench_new_full.log | \
-            grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' > bench_new.txt
+            tee bench_new_full.log
+          grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' bench_new_full.log > bench_new.txt
       - name: Run baseline from main branch
         shell: bash
         run: |
@@ -154,8 +154,8 @@ jobs:
           export SQLSERVER_DSN="sqlserver://${SQLUSER}:${SQLPASSWORD}@localhost:1433?database=${DATABASE}&trustServerCertificate=true"
           go test -run='^$' -bench='Benchmark' -skip='BenchmarkMessageQueue' \
             -benchtime=1s -count=3 -benchmem -timeout=30m . ./msdsn 2>&1 | \
-            tee "$GITHUB_WORKSPACE/bench_old_full.log" | \
-            grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' > "$GITHUB_WORKSPACE/bench_old.txt"
+            tee "$GITHUB_WORKSPACE/bench_old_full.log"
+          grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' "$GITHUB_WORKSPACE/bench_old_full.log" > "$GITHUB_WORKSPACE/bench_old.txt"
           cd "$GITHUB_WORKSPACE"
           git worktree remove ../main-bench --force
       - name: Compare benchmarks
