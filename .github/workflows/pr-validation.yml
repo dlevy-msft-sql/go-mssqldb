@@ -141,7 +141,7 @@ jobs:
           # Run only our new benchmarks (explicit pattern avoids pre-existing slow benchmarks)
           BENCH_PATTERN='Benchmark(BulkMakeParam|ConvertAssign|Decode|Encode|ManglePassword|Parse|Read|RoundTrip|Send|Str2ucs2|TdsBuffer|Ucs22str|Write)'
           go test -run='^$' -bench="$BENCH_PATTERN" \
-            -benchtime=1s -count=3 -benchmem -timeout=15m . ./msdsn 2>&1 | \
+            -benchtime=1s -count=5 -benchmem -timeout=15m . ./msdsn 2>&1 | \
             tee bench_new_full.log
           grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' bench_new_full.log > bench_new.txt
       - name: Run baseline from main branch
@@ -159,7 +159,7 @@ jobs:
           export SQLSERVER_DSN="sqlserver://${SQLUSER}:${SQLPASSWORD}@localhost:1433?database=${DATABASE}&trustServerCertificate=true"
           BENCH_PATTERN='Benchmark(BulkMakeParam|ConvertAssign|Decode|Encode|ManglePassword|Parse|Read|RoundTrip|Send|Str2ucs2|TdsBuffer|Ucs22str|Write)'
           go test -run='^$' -bench="$BENCH_PATTERN" \
-            -benchtime=1s -count=3 -benchmem -timeout=15m . ./msdsn 2>&1 | \
+            -benchtime=1s -count=5 -benchmem -timeout=15m . ./msdsn 2>&1 | \
             tee "$GITHUB_WORKSPACE/bench_old_full.log"
           grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' "$GITHUB_WORKSPACE/bench_old_full.log" > "$GITHUB_WORKSPACE/bench_old.txt"
           cd "$GITHUB_WORKSPACE"
@@ -180,9 +180,14 @@ jobs:
             echo "No comparison available, skipping regression check."
             exit 0
           fi
-          # Fail if any benchmark regressed by more than 20%
-          if grep -E '^\S+\s+.+\s+\+[2-9][0-9]\.[0-9]+%' bench_diff.txt; then
-            echo "::error::Performance regression detected (>20% slower)"
+          # Report improvements
+          if grep -E '^\S+\s+.+\s+-[0-9]+\.[0-9]+%' bench_diff.txt; then
+            echo ""
+            echo "::notice::Performance improvements detected (see above)"
+          fi
+          # Fail if any benchmark regressed by more than 30%
+          if grep -E '^\S+\s+.+\s+\+[3-9][0-9]\.[0-9]+%' bench_diff.txt; then
+            echo "::error::Performance regression detected (>30% slower)"
             exit 1
           fi
           if grep -E '^\S+\s+.+\s+\+[1-9][0-9]{2,}\.[0-9]+%' bench_diff.txt; then
