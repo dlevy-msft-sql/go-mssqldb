@@ -180,14 +180,15 @@ jobs:
             echo "No comparison available, skipping regression check."
             exit 0
           fi
-          # Report improvements
-          if grep -E '^\S+\s+.+\s+-[0-9]+\.[0-9]+%' bench_diff.txt; then
+          # Report statistically significant improvements (real %, not ~)
+          if grep -v '~' bench_diff.txt | grep -E '^\S+\s+.+\s+-[0-9]+\.[0-9]+%'; then
             echo ""
             echo "::notice::Performance improvements detected (see above)"
           fi
-          # Fail if any benchmark regressed by more than 10%
-          if grep -E '^\S+\s+.+\s+\+[1-9][0-9]+\.[0-9]+%' bench_diff.txt; then
-            echo "::error::Performance regression detected (>10% slower)"
+          # Fail only on statistically significant regressions >10%
+          # benchstat marks insignificant changes with ~ so we exclude those
+          if grep -v '~' bench_diff.txt | grep -E '^\S+\s+.+\s+\+[1-9][0-9]+\.[0-9]+%'; then
+            echo "::error::Statistically significant regression detected (>10% slower, p<0.05)"
             exit 1
           fi
           echo "No significant regressions detected."
