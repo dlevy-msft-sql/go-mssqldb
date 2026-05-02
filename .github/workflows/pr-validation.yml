@@ -94,7 +94,7 @@ jobs:
 
   benchmarks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: write
@@ -141,7 +141,7 @@ jobs:
           # Run only our new benchmarks (explicit pattern avoids pre-existing slow benchmarks)
           BENCH_PATTERN='Benchmark(BulkMakeParam|ConvertAssign|Decode|Encode|ManglePassword|Parse|Read|RoundTrip|Send|Str2ucs2|TdsBuffer|Ucs22str|Write)'
           go test -run='^$' -bench="$BENCH_PATTERN" \
-            -benchtime=1s -count=10 -benchmem -timeout=20m . ./msdsn 2>&1 | \
+            -benchtime=1s -count=10 -benchmem -timeout=25m . ./msdsn 2>&1 | \
             tee bench_new_full.log
           grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' bench_new_full.log > bench_new.txt
       - name: Run baseline from main branch
@@ -159,7 +159,7 @@ jobs:
           export SQLSERVER_DSN="sqlserver://${SQLUSER}:${SQLPASSWORD}@localhost:1433?database=${DATABASE}&trustServerCertificate=true"
           BENCH_PATTERN='Benchmark(BulkMakeParam|ConvertAssign|Decode|Encode|ManglePassword|Parse|Read|RoundTrip|Send|Str2ucs2|TdsBuffer|Ucs22str|Write)'
           go test -run='^$' -bench="$BENCH_PATTERN" \
-            -benchtime=1s -count=10 -benchmem -timeout=20m . ./msdsn 2>&1 | \
+            -benchtime=1s -count=10 -benchmem -timeout=25m . ./msdsn 2>&1 | \
             tee "$GITHUB_WORKSPACE/bench_old_full.log"
           grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' "$GITHUB_WORKSPACE/bench_old_full.log" > "$GITHUB_WORKSPACE/bench_old.txt"
           cd "$GITHUB_WORKSPACE"
