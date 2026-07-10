@@ -11,9 +11,9 @@ A pure Go database/sql driver for Microsoft SQL Server and Azure SQL Database. T
 
 ## Install
 
-Requires Go 1.17 or above.
+Requires Go 1.25 or above.
 
-Install with `go install github.com/microsoft/go-mssqldb@latest`.
+Install with `go get github.com/microsoft/go-mssqldb@latest`.
 
 ## Connection Parameters and DSN
 
